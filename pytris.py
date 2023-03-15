@@ -9,15 +9,19 @@ import re
 T = TypeVar('T')
 
 # TYPES START
+
+
 class Position:
     def __init__(self, row_index: int, col_index: int) -> None:
         self.row_index = row_index
         self.col_index = col_index
 
+
 class GridSize:
     def __init__(self, rows, columns) -> None:
         self.rows = rows
         self.columns = columns
+
 
 class GameSettings:
     def __init__(self, grid_size: GridSize) -> None:
@@ -38,7 +42,7 @@ class CliArgumentConfig:
     # -- with shorthand specified: -<shorthand <value>
     # eg: --grid-size 50,10 -> where '--grid-size' is the name and '50,10' is the value
     # eg: -GS 50,10         -> where '-GS' is the shorthand and '50,10' is the value
-    def __init__(self, name: str, shorthand: str, value_validator: CliArgumentValueValidator) -> None:
+    def __init__(self, name: str, shorthand: str, value_validator: CliArgumentValueValidator, is_mandatory: bool) -> None:
         self.name = name
         self.shorthand = shorthand
         self.value_validator = value_validator
@@ -53,18 +57,49 @@ class CliArgumentParser:
     def __init__(self, config: CliArgumentParserConfig) -> None:
         self.available_arguments = config.available_arguments
 
+    def parse(self, argument_string: str) -> GameSettings:
+        valid_results = []
+        pairs = self.parse_to_pairs(argument_string)
+        pair_by_validator = self.get_pairs_by_validator(pairs)
+        for entry in pair_by_validator:
+            validation = entry[0].validate(entry[1][1])
+            match validation:
+                case (_, None):
+                    valid_results.append(validation)
+                case _:
+                    print(validation)
 
-    def parse(self, args: List[str | None]):
+    def parse_to_pairs(self, args: List[str | None]):
         argument_pairs = []
         if len(args) % 2 == 1:
             args.append(None)
         for first, second in zip(args[::2], args[1::2]):
             argument_pairs.append((first, second))
+        return argument_pairs
+
+    def get_pairs_by_validator(self, pairs: List[(tuple[str, None] | tuple[str, str])]):
+        find_validator_result = []
+        for idx, pair in enumerate(pairs):
+            find_validator_result.append(
+                (self.find_validator_by_name(pair[0], pair)))
+        return find_validator_result
+
+    def find_validator_by_name(self, name: str, index: int) -> (tuple[CliArgumentConfig, None] | tuple[None, str]):
+        if not name.startswith("--"):
+            return None, f"Error parsing argument [{index}] [{name}]: Argument name must start with: '--'"
+
+        argument_name = name[2:]
+        for arg in self.available_arguments:
+            if arg.name is argument_name:
+                return arg, None
+        return None, f"Invalid argument [{index}] [{name}]"
+
     # TODO:
     # after this we should have (arg_name, arg_value) paris
     # -> validate each pair individually, validate the name, after that the value
     # -> if eaither the name or the value is invalid skip the argument pair and go to the next one
     # -> if an invalid argument is essential for running, stop the execution with an error message, esle just continue with default values
+
 
 class ArgumentValidationError(Exception):
     pass
@@ -89,18 +124,25 @@ def grid_size_validator(argument_name: str, value: str):
     else:
         return None, f"Invalid value for argument: {argument_name}, expected format: {allowed_format} acual value: {value}"
 
-grid_size_cli_validator: CliArgumentValueValidator = CliArgumentValueValidator(grid_size_validator)
-gs_arg_config: CliArgumentConfig = CliArgumentConfig("grid-size", "GS", grid_size_cli_validator)
 
-cli_arg_parser_config: CliArgumentParserConfig = CliArgumentParserConfig([gs_arg_config])
-cli_argument_parser: CliArgumentParser = CliArgumentParser(cli_arg_parser_config)
+grid_size_cli_validator: CliArgumentValueValidator = CliArgumentValueValidator(
+    grid_size_validator)
+gs_arg_config: CliArgumentConfig = CliArgumentConfig(
+    "grid-size", "GS", grid_size_cli_validator, False)
+
+cli_arg_parser_config: CliArgumentParserConfig = CliArgumentParserConfig([
+                                                                         gs_arg_config])
+cli_argument_parser: CliArgumentParser = CliArgumentParser(
+    cli_arg_parser_config)
+
 
 def main():
-    
+    cli_arguments_string = sys.argv
+    cli_argument_parser.parse(cli_arguments_string)
 
-    grid_size = (30, 10)
-    game = Tetris(grid_size)
-    game.start()
+    # grid_size = (30, 10)
+    # game = Tetris(grid_size)
+    # game.start()
 
 
 # def parse_args(args: List[str]) -> GameSettings:
@@ -146,11 +188,13 @@ class Tetris:
             self.in_game_tetrominoes[-1].move_down()
 
     def iterate(self):
-        # generating new tetrominoe 
+        # generating new tetrominoe
         random_tetrominoe_index = random.choice(range(1, 4))
-        tetrominoe_starting_col_index = random.choice(range(0, self.grid_size[0]))
+        tetrominoe_starting_col_index = random.choice(
+            range(0, self.grid_size[0]))
         starting_position = (0, tetrominoe_starting_col_index)
-        self.in_game_tetrominoes.append(tetrominoe(representation=TetrominoeType(random_tetrominoe_index), starting_position=starting_position))
+        self.in_game_tetrominoes.append(tetrominoe(representation=TetrominoeType(
+            random_tetrominoe_index), starting_position=starting_position))
 
     def do_cycle(self):
         os.system("clear")
@@ -172,7 +216,8 @@ class Tetris:
             for col_index, col in enumerate(row):
                 # loop through all in game tetrominoes
                 current_index = (row_index, col_index)
-                current_char = 'x' if self.is_any_tetrominoe_intersecting( current_index) else ' '
+                current_char = 'x' if self.is_any_tetrominoe_intersecting(
+                    current_index) else ' '
                 print(current_char, end='')
 
             # print right border for each row
