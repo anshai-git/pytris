@@ -114,11 +114,8 @@ def grid_size_validator(argument_name: str, value: str):
         return None, f"Invalid value for argument: {argument_name}, expected format: {allowed_format} actual value: {value}"
 
 def main():
-    # building argument parser
-    gs_arg_config: Subcommand = Subcommand("grid-size", "GS", grid_size_validator, False)
-
     cli_arg_parser_config: ArgumentParserConfig = ArgumentParserConfig([
-        gs_arg_config
+        Subcommand("grid-size", "GS", grid_size_validator, False)
     ])
     cli_argument_parser: ArgumentParser = ArgumentParser(cli_arg_parser_config)
 
