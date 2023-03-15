@@ -1,39 +1,125 @@
+from typing import List, TypeVar, Generic, Callable
 import random
 import time
 from enum import Enum
 import os
+import sys
+import re
 
+T = TypeVar('T')
+
+# TYPES START
+class Position:
+    def __init__(self, row_index: int, col_index: int) -> None:
+        self.row_index = row_index
+        self.col_index = col_index
+
+class GridSize:
+    def __init__(self, rows, columns) -> None:
+        self.rows = rows
+        self.columns = columns
+
+class GameSettings:
+    def __init__(self, grid_size: GridSize) -> None:
+        self.grid_size = grid_size
+# TYPES END
+
+
+# ARGUMENT PARSER START
+class CliArgumentValueValidator(Generic[T]):
+    def __init__(self, validator_function: Callable[[str, str], (tuple[T, None] | tuple[None, str])]) -> None:
+        self.validate = validator_function
+
+
+class CliArgumentConfig:
+    # The configuration for a single argument:
+    # an arg should look like:
+    # -- with fully specified name: --<name> <value>
+    # -- with shorthand specified: -<shorthand <value>
+    # eg: --grid-size 50,10 -> where '--grid-size' is the name and '50,10' is the value
+    # eg: -GS 50,10         -> where '-GS' is the shorthand and '50,10' is the value
+    def __init__(self, name: str, shorthand: str, value_validator: CliArgumentValueValidator) -> None:
+        self.name = name
+        self.shorthand = shorthand
+        self.value_validator = value_validator
+
+
+class CliArgumentParserConfig:
+    def __init__(self, available_arguments: List[CliArgumentConfig]) -> None:
+        self.available_arguments = available_arguments
+
+
+class CliArgumentParser:
+    def __init__(self, config: CliArgumentParserConfig) -> None:
+        self.available_arguments = config.available_arguments
+
+
+    def parse(self, args: List[str | None]):
+        argument_pairs = []
+        if len(args) % 2 == 1:
+            args.append(None)
+        for first, second in zip(args[::2], args[1::2]):
+            argument_pairs.append((first, second))
+    # TODO:
+    # after this we should have (arg_name, arg_value) paris
+    # -> validate each pair individually, validate the name, after that the value
+    # -> if eaither the name or the value is invalid skip the argument pair and go to the next one
+    # -> if an invalid argument is essential for running, stop the execution with an error message, esle just continue with default values
+
+class ArgumentValidationError(Exception):
+    pass
+# ARGUMENT PARSER END
+
+
+# Arguments:
+# grid_size
+def grid_size_validator(argument_name: str, value: str):
+    allowed_format = "<width: int><separator: @see allowed_separators><height: int>"
+    pattern = r'^(?=[1-9][0-9]{1})(?=[^,x]{0,2}[x,][^,x]{0,2}|[^,x]{0,2}[,][^,x]{0,2})[1-9][0-9]{1}[,x][1-9][0-9]{1}$'
+    # Explanation of the regular expression:
+    # ^ and $ are anchors that match the start and end of the string respectively.
+    # (?=[1-9][0-9]{1}) is a positive lookahead that checks if the string has at least one 2 digit number that starts with a digit from 1 to 9.
+    # (?=[^,x]{0,2}[x,][^,x]{0,2}|[^,x]{0,2}[,][^,x]{0,2}) is another positive lookahead that checks if the string has a comma or an "x" in the middle, surrounded by up to 2 non-comma/non-"x" characters on each side.
+    # [1-9][0-9]{1} matches a 2 digit number that starts with a digit from 1 to 9.
+    # [,x] matches either a comma or an "x".
+    # The final [1-9][0-9]{1} matches another 2 digit number that starts with a digit from 1 to 9.
+    if re.match(pattern, value):
+        values = value.split(value[2])
+        return GridSize(values[0], values[1]), None
+    else:
+        return None, f"Invalid value for argument: {argument_name}, expected format: {allowed_format} acual value: {value}"
+
+grid_size_cli_validator: CliArgumentValueValidator = CliArgumentValueValidator(grid_size_validator)
+gs_arg_config: CliArgumentConfig = CliArgumentConfig("grid-size", "GS", grid_size_cli_validator)
+
+cli_arg_parser_config: CliArgumentParserConfig = CliArgumentParserConfig([gs_arg_config])
+cli_argument_parser: CliArgumentParser = CliArgumentParser(cli_arg_parser_config)
 
 def main():
+    
+
     grid_size = (30, 10)
-    game = Game(grid_size)
-    # game.run()
-
-    # make this dynamic
-    while not game.game_over():
-        # validate game by checking if there is anything in the first row
-        os.system("clear")
-        game.print_map()
-
-        # print(game.in_game_objects[-1].position)
-        time.sleep(1)
-        # the object for the current iteration is always the last object from the list
-        game.in_game_objects[-1].move_down()
+    game = Tetris(grid_size)
+    game.start()
 
 
-class Game:
+# def parse_args(args: List[str]) -> GameSettings:
+#     return GameSettings()
+
+
+class Tetris:
     # grid_size: tuple of 2 elements: width, height
     def __init__(self, grid_size):
         # TODO:
-        # [ ] - validate grid size
-        #       it must be at least the size of the smallest object
+        # [ ] - validate grid size, it must be at least the size of the smallest tetrominoe
         self.grid_size = grid_size
         self.grid = [[0] * grid_size[0] for _ in range(grid_size[1])]
-        self.in_game_objects = []
-        self.in_game_objects.append(object(
-            representation=ObjectType(1), starting_position=(0, 0)))
+        self.in_game_tetrominoes = []
+        # NOTE: find another solution for keeping track of the tetrominoe type
+        self.in_game_tetrominoes.append(tetrominoe(
+            representation=TetrominoeType(1), starting_position=(0, 0)))
 
-        # absolute dogshit initialization for borders
+        # absolute dog shit initialization for borders
         top_row = [1 for _ in range(grid_size[0])]
         top_row[:0] = [3]
         top_row.append(4)
@@ -50,18 +136,28 @@ class Game:
             bottom_row
         )
 
+    def start(self):
+        # make this dynamic
+        while not self.game_over():
+            # validate game by checking if there is anything in the first row
+            self.render()
+
+            # the tetrominoe for the current iteration is always the last one from the list
+            self.in_game_tetrominoes[-1].move_down()
+
     def iterate(self):
-        # generating new object
-        random_object_index = random.choice(range(1, 4))
-        object_starting_col_index = random.choice(range(0, self.grid_size[0]))
-        starting_position = (0, object_starting_col_index)
-        self.in_game_objects += object(
-            representation=ObjectType[random_object_index], starting_position=starting_position)
+        # generating new tetrominoe 
+        random_tetrominoe_index = random.choice(range(1, 4))
+        tetrominoe_starting_col_index = random.choice(range(0, self.grid_size[0]))
+        starting_position = (0, tetrominoe_starting_col_index)
+        self.in_game_tetrominoes.append(tetrominoe(representation=TetrominoeType(random_tetrominoe_index), starting_position=starting_position))
 
-    def run(self):
-        self.print_map()
+    def do_cycle(self):
+        os.system("clear")
+        self.render()
+        time.sleep(1)
 
-    def print_map(self):
+    def render(self):
         # print top row
         for c in self.grid_borders[0]:
             print(c, end='')
@@ -74,10 +170,9 @@ class Game:
 
             # print row
             for col_index, col in enumerate(row):
-                # loop through all in game objects
+                # loop through all in game tetrominoes
                 current_index = (row_index, col_index)
-                current_char = 'x' if self.is_any_object_present(
-                    current_index) else ' '
+                current_char = 'x' if self.is_any_tetrominoe_intersecting( current_index) else ' '
                 print(current_char, end='')
 
             # print right border for each row
@@ -90,27 +185,22 @@ class Game:
             print(c, end='')
         print('')
 
-    def generate_random_starting_position_for_object(self):
+    def generate_random_starting_position_for_tetrominoe(self):
         return random.choice(range(0, self.grid_size[0]))
 
-    def is_any_object_present(self, current_index):
+    def is_any_tetrominoe_intersecting(self, current_index):
         # current_index is: (row, col)
-        for obj in self.in_game_objects:
-            # verify if any of the object is intersecting the current index
-            if obj.intersects(current_index):
+        for t in self.in_game_tetrominoes:
+            # verify if any of the tetrominoe is intersecting the current index
+            if t.intersects(current_index):
                 return True
         return False
 
     def game_over(self):
-        for col_index in range(self.grid_size[1]):
-            if self.grid[0][col_index] is not ' ':
-                for row in range(self.grid_size[0]):
-                    if self.grid[row][col_index] is ' ':
-                        return False
-        return True
+        return False
 
 
-class object:
+class tetrominoe:
     def __init__(self, representation, starting_position):
         self.representation = representation
         self.position = starting_position
@@ -127,7 +217,7 @@ class object:
         self.position = (self.position[0], self.position[1] + 1)
 
     def intersects(self, coords):
-        # TODO: somehow verify if the position of the current object intersect the coordinates passed
+        # TODO: somehow verify if the position of the current tetrominoe intersect the coordinates passed
         # if any((c[0] == coords[0] and c[1] == coords[1]) for c in vertical_line(self.position)):
         #     print(vertical_line(self.position))
         return any((c[0] == coords[0] and c[1] == coords[1]) for c in vertical_line(self.position))
@@ -142,7 +232,7 @@ def vertical_line(pos):
     ]
 
 
-class ObjectType(Enum):
+class TetrominoeType(Enum):
     VERTICAL_LINE = 1
     HORIZONTAL_LINE = 2
     BOX = 3
