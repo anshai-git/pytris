@@ -9,8 +9,6 @@ import re
 T = TypeVar('T')
 
 # TYPES START
-
-
 class Position:
     def __init__(self, row_index: int, col_index: int) -> None:
         self.row_index = row_index
@@ -24,85 +22,76 @@ class GridSize:
 
 
 class GameSettings:
+    #                  TODO: 
+#                      maybe this could be some kind of a structure with the setting and its type 
+#                      the setting type itself may be able to parse itself?
+#                      ^
     def __init__(self, grid_size: GridSize) -> None:
         self.grid_size = grid_size
 # TYPES END
 
 
 # ARGUMENT PARSER START
-class CliArgumentValueValidator(Generic[T]):
-    def __init__(self, validator_function: Callable[[str, str], (tuple[T, None] | tuple[None, str])]) -> None:
-        self.validate = validator_function
-
-
-class CliArgumentConfig:
+class Subcommand(Generic[T]):
     # The configuration for a single argument:
     # an arg should look like:
     # -- with fully specified name: --<name> <value>
     # -- with shorthand specified: -<shorthand <value>
     # eg: --grid-size 50,10 -> where '--grid-size' is the name and '50,10' is the value
     # eg: -GS 50,10         -> where '-GS' is the shorthand and '50,10' is the value
-    def __init__(self, name: str, shorthand: str, value_validator: CliArgumentValueValidator, is_mandatory: bool) -> None:
+    def __init__(self, name: str, shorthand: str, value_validator: Callable[[str, str], (tuple[T, None] | tuple[None, str])], is_mandatory: bool) -> None:
         self.name = name
         self.shorthand = shorthand
         self.value_validator = value_validator
 
 
-class CliArgumentParserConfig:
-    def __init__(self, available_arguments: List[CliArgumentConfig]) -> None:
-        self.available_arguments = available_arguments
+class ArgumentParserConfig:
+    def __init__(self, subcommands: List[Subcommand]) -> None:
+        self.subcommands = subcommands
 
 
-class CliArgumentParser:
-    def __init__(self, config: CliArgumentParserConfig) -> None:
-        self.available_arguments = config.available_arguments
+class ArgumentParser:
+    def __init__(self, config: ArgumentParserConfig) -> None:
+        self.available_arguments = config.subcommands
 
-    def parse(self, argument_string: str) -> GameSettings:
+    def parse(self, argument_string: List[str]) -> GameSettings:
         valid_results = []
         pairs = self.parse_to_pairs(argument_string)
         pair_by_validator = self.get_pairs_by_validator(pairs)
         for entry in pair_by_validator:
-            validation = entry[0].validate(entry[1][1])
-            match validation:
-                case (_, None):
-                    valid_results.append(validation)
-                case _:
-                    print(validation)
+            print(entry)
+            if entry[0] is not None:
+                validation = entry[0].value_validator(entry[0].name, entry[1][1])
+                match validation:
+                    case (_, None):
+                        valid_results.append(validation)
+                    case _: pass
+        return valid_results
 
-    def parse_to_pairs(self, args: List[str | None]):
+    def parse_to_pairs(self, args: List[str]):
         argument_pairs = []
         if len(args) % 2 == 1:
-            args.append(None)
+            args.append("_")
         for first, second in zip(args[::2], args[1::2]):
-            argument_pairs.append((first, second))
+            argument_pairs.append((first, second.replace("_", "")))
         return argument_pairs
 
-    def get_pairs_by_validator(self, pairs: List[(tuple[str, None] | tuple[str, str])]):
+    def get_pairs_by_validator(self, pairs: List[tuple[str, None] | tuple[str, str]]):
         find_validator_result = []
         for idx, pair in enumerate(pairs):
-            find_validator_result.append(
-                (self.find_validator_by_name(pair[0], pair)))
+            t = self.find_validator_by_name(pair, idx)
+            find_validator_result.append((t[0], pair))
         return find_validator_result
 
-    def find_validator_by_name(self, name: str, index: int) -> (tuple[CliArgumentConfig, None] | tuple[None, str]):
-        if not name.startswith("--"):
-            return None, f"Error parsing argument [{index}] [{name}]: Argument name must start with: '--'"
+    def find_validator_by_name(self, pair: (tuple[str, None] | tuple[str, str]), index: int) -> (tuple[Subcommand, None] | tuple[None, str]):
+        if not pair[0].startswith("--"):
+            return None, f"Error parsing argument [{index}] [{pair[0]}]: Argument name must start with: '--'"
 
-        argument_name = name[2:]
+        argument_name = pair[0][2:]
         for arg in self.available_arguments:
-            if arg.name is argument_name:
+            if arg.name == argument_name:
                 return arg, None
-        return None, f"Invalid argument [{index}] [{name}]"
-
-    # TODO:
-    # after this we should have (arg_name, arg_value) paris
-    # -> validate each pair individually, validate the name, after that the value
-    # -> if eaither the name or the value is invalid skip the argument pair and go to the next one
-    # -> if an invalid argument is essential for running, stop the execution with an error message, esle just continue with default values
-
-
-class ArgumentValidationError(Exception):
-    pass
+        return None, f"Invalid argument [{index}] [{pair[0]}]"
 # ARGUMENT PARSER END
 
 
@@ -122,23 +111,18 @@ def grid_size_validator(argument_name: str, value: str):
         values = value.split(value[2])
         return GridSize(values[0], values[1]), None
     else:
-        return None, f"Invalid value for argument: {argument_name}, expected format: {allowed_format} acual value: {value}"
-
-
-grid_size_cli_validator: CliArgumentValueValidator = CliArgumentValueValidator(
-    grid_size_validator)
-gs_arg_config: CliArgumentConfig = CliArgumentConfig(
-    "grid-size", "GS", grid_size_cli_validator, False)
-
-cli_arg_parser_config: CliArgumentParserConfig = CliArgumentParserConfig([
-                                                                         gs_arg_config])
-cli_argument_parser: CliArgumentParser = CliArgumentParser(
-    cli_arg_parser_config)
-
+        return None, f"Invalid value for argument: {argument_name}, expected format: {allowed_format} actual value: {value}"
 
 def main():
-    cli_arguments_string = sys.argv
-    cli_argument_parser.parse(cli_arguments_string)
+    # building argument parser
+    gs_arg_config: Subcommand = Subcommand("grid-size", "GS", grid_size_validator, False)
+
+    cli_arg_parser_config: ArgumentParserConfig = ArgumentParserConfig([
+        gs_arg_config
+    ])
+    cli_argument_parser: ArgumentParser = ArgumentParser(cli_arg_parser_config)
+
+    game_settings = cli_argument_parser.parse(sys.argv[1:])
 
     # grid_size = (30, 10)
     # game = Tetris(grid_size)
