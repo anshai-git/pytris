@@ -1,5 +1,6 @@
 from curses import wrapper
 import curses
+from enum import Enum
 import random
 import time
 import logging
@@ -40,6 +41,15 @@ shapes = [
          [0,1,1]]
 ]
 
+class UnicodeCharacters:
+        HORIZONTAL_LINE = "\u2500"
+        VERTICAL_LINE = "\u2502"
+        TOP_LEFT_CORNER = "\u256D"
+        TOP_RIGHT_CORNER = "\u256E"
+        BOTTOM_LEFT_CORNER = "\u2570"
+        BOTTOM_RIGHT_CORNER = "\u256F"
+        FILLED_BLOCK = "\u2588"
+
 def main(screen):
     game = Tetris(screen)
     game.render()
@@ -68,6 +78,8 @@ class Tetris:
         curses.init_pair(3, curses.COLOR_GREEN, curses.COLOR_BLACK)
         curses.init_pair(4, curses.COLOR_CYAN, curses.COLOR_BLACK)
         curses.init_pair(5, curses.COLOR_YELLOW, curses.COLOR_BLACK)
+        curses.init_pair(6, curses.COLOR_WHITE, curses.COLOR_BLACK)
+        curses.init_pair(7, curses.COLOR_MAGENTA, curses.COLOR_BLACK)
 
         self.screen = screen
 
@@ -77,7 +89,7 @@ class Tetris:
             can_move = True
             while can_move:
                 time.sleep(0.1)
-                self.clear_firs_row(tetromino)
+                self.clear_first_row(tetromino)
                 can_move = tetromino.move_down(self.grid_height, self.shadow_grid)
                 if not can_move:
                     row = tetromino.position.row
@@ -89,93 +101,62 @@ class Tetris:
                 self.draw_tetromino(tetromino, self.shadow_grid)
 
     def render(self):
-        # Draw top left corner
-        self.screen.addstr(0, 0, self.get_unicode_by_number(3))
-        # Draw top border
+        draw = self.screen.addstr
+
+        draw(0, 0, UnicodeCharacters.TOP_LEFT_CORNER)
         for i in range(1, self.grid_width + 1):
-            self.screen.addstr(0, i, self.get_unicode_by_number(1))
-        # Draw top right corner
-        self.screen.addstr(0, self.grid_width + 1, self.get_unicode_by_number(4))
+            draw(0, i, UnicodeCharacters.HORIZONTAL_LINE)
+        draw(0, self.grid_width + 1, UnicodeCharacters.TOP_RIGHT_CORNER)
 
         for i in range(1, self.grid_height + 1):
-            # Draw the first character for each row
-            self.screen.addstr(i, 0, self.get_unicode_by_number(2))
-            # Draw the grid content
+            draw(i, 0, UnicodeCharacters.VERTICAL_LINE)
             for j in range(1, self.grid_width + 1):
-                self.screen.addstr(i, j, ' ')
-            # Draw the last character for each row
-            self.screen.addstr(i, self.grid_width + 1, self.get_unicode_by_number(2))
-        # Draw bottom left corner
-        self.screen.addstr(self.grid_height, 0, self.get_unicode_by_number(5))
-        # Draw bottom border
+                draw(i, j, ' ')
+            draw(i, self.grid_width + 1, UnicodeCharacters.VERTICAL_LINE)
+        draw(self.grid_height, 0, UnicodeCharacters.BOTTOM_LEFT_CORNER)
         for i in range(1, self.grid_width + 1):
-            self.screen.addstr(self.grid_height, i, self.get_unicode_by_number(1))
+            draw(self.grid_height, i, UnicodeCharacters.HORIZONTAL_LINE)
         self.screen.refresh()
-        # Draw bottom right corner
-        self.screen.addstr(self.grid_height, self.grid_width + 1, self.get_unicode_by_number(6))
+        draw(self.grid_height, self.grid_width + 1, UnicodeCharacters.BOTTOM_RIGHT_CORNER)
 
     def draw_tetromino(self, tetromino, shadow_grid):
         row = tetromino.position.row
         col = tetromino.position.col
+        draw = self.screen.addstr
 
-        # Draw the tetromino by iterating relatively in the grid and relatively in the shape also
         for i in range(row, row + len(tetromino.shape)):
             for j in range(col, col + len(tetromino.shape[0])):
-                shape_value = tetromino.shape[i - row][j - col];
-                block_char = self.get_unicode_by_number(7)
-                match shape_value:
+                match tetromino.shape[i - row][j - col]:
                     case 1:
-                        self.screen.addstr(i, j, block_char, tetromino.color)
+                        draw(i, j, UnicodeCharacters.FILLED_BLOCK, tetromino.color)
                     case 0 if shadow_grid[i][j] == 0:
-                        self.screen.addstr(i, j, ' ')
-
+                        draw(i, j, ' ')
 
         self.screen.refresh()
 
-    def clear_firs_row(self, tetromino):
+    def clear_first_row(self, tetromino):
+        col = tetromino.position.col
+        row = tetromino.position.row
+        draw = self.screen.addstr
+
         if tetromino.position.row > 0:
-            for col in range(tetromino.position.col, tetromino.position.col + len(tetromino.shape[0])):
-                self.screen.addstr(tetromino.position.row, col, ' ')
+            for col in range(col, col + len(tetromino.shape[0])):
+                draw(row, col, ' ')
             self.screen.refresh()
-
-    def get_random_shape(self):
-        return random.choice(shapes)
-
-    def get_unicode_by_number(self, num):
-        match num:
-            case 1:
-                return "\u2500"
-            case 2:
-                return "\u2502"
-            case 3:
-                return "\u256D"
-            case 4:
-                return "\u256E"
-            case 5:
-                return "\u2570"
-            case 6:
-                return "\u256F"
-            case 7:
-                return "\u2588"
-            case _:
-                return " "
 
 class Tetromino:
     def __init__(self, grid_width) -> None:
         self.shape = random.choice(shapes)
         self.position = Position(1, random.choice(range(1, grid_width - len(self.shape[0]))))
-        self.color = curses.color_pair(random.randint(1, 5))
+        self.color = curses.color_pair(random.randint(1, 7))
 
     def move_down(self, grid_height, shadow_grid) -> bool:
-        row = self.position.row
-        col = self.position.col
-
-        for i in range(row, row + len(self.shape)):
-            for j in range(col, col + len(self.shape[0])):
-                if self.shape[i - row][j - col] == 1 and shadow_grid[i + 1][j] == 1:
+        for i in range(len(self.shape)):
+            for j in range(len(self.shape[0])):
+                if self.shape[i][j] == 1 and shadow_grid[i + self.position.row + 1][j + self.position.col] == 1:
                     return False
 
-        if (row) + len(self.shape) == grid_height:
+        if (self.position.row) + len(self.shape) == grid_height:
             return False
         else:
             self.position.row += 1
