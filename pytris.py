@@ -71,6 +71,8 @@ class Tetris:
         curses.noecho()
         curses.cbreak()
         curses.curs_set(0)
+        self.screen.keypad(True)
+        self.screen.timeout(0)
 
         curses.start_color()
         curses.init_pair(1, curses.COLOR_RED, curses.COLOR_BLACK)
@@ -88,9 +90,23 @@ class Tetris:
             tetromino = Tetromino(self.grid_width)
             can_move = True
             while can_move:
-                time.sleep(0.1)
-                self.clear_first_row(tetromino)
+                key_pressed = self.screen.getch()
+                if key_pressed != curses.ERR:
+                    match key_pressed:
+                        case 104:
+                            tetromino.move_left(self.shadow_grid)
+                            self.clear_last_column(tetromino)
+                        case 108:
+                            tetromino.move_right(self.shadow_grid)
+                            self.clear_first_column(tetromino)
+                        case _:
+                            pass
+                self.draw_tetromino(tetromino, self.shadow_grid)
+
+
+                time.sleep(0.5)
                 can_move = tetromino.move_down(self.grid_height, self.shadow_grid)
+                self.clear_first_row(tetromino)
                 if not can_move:
                     row = tetromino.position.row
                     col = tetromino.position.col
@@ -98,7 +114,6 @@ class Tetris:
                     for i in range(row, row + len(tetromino.shape)):
                         for j in range(col, col + len(tetromino.shape[0])):
                             self.shadow_grid[i][j] = tetromino.shape[i - row][j - col] if self.shadow_grid[i][j] == 0 else 1
-                self.draw_tetromino(tetromino, self.shadow_grid)
 
     def render(self):
         draw = self.screen.addstr
@@ -134,6 +149,28 @@ class Tetris:
 
         self.screen.refresh()
 
+    def clear_first_column(self, tetromino):
+        col = tetromino.position.col
+        row = tetromino.position.row
+        draw = self.screen.addstr
+
+        if tetromino.position.row > 0:
+            for row in range(row, row + len(tetromino.shape)):
+                draw(row, col - 1, ' ')
+            self.screen.refresh()
+
+
+    def clear_last_column(self, tetromino):
+        col = tetromino.position.col
+        row = tetromino.position.row
+        draw = self.screen.addstr
+
+        if tetromino.position.row > 0:
+            for row in range(row, row + len(tetromino.shape)):
+                draw(row, col + len(tetromino.shape[0]), ' ')
+            self.screen.refresh()
+
+
     def clear_first_row(self, tetromino):
         col = tetromino.position.col
         row = tetromino.position.row
@@ -141,7 +178,7 @@ class Tetris:
 
         if tetromino.position.row > 0:
             for col in range(col, col + len(tetromino.shape[0])):
-                draw(row, col, ' ')
+                draw(row - 1, col, ' ')
             self.screen.refresh()
 
 class Tetromino:
@@ -149,6 +186,7 @@ class Tetromino:
         self.shape = random.choice(shapes)
         self.position = Position(1, random.choice(range(1, grid_width - len(self.shape[0]))))
         self.color = curses.color_pair(random.randint(1, 7))
+        self.grid_width = grid_width
 
     def move_down(self, grid_height, shadow_grid) -> bool:
         for i in range(len(self.shape)):
@@ -162,12 +200,22 @@ class Tetromino:
             self.position.row += 1
             return True
 
-    def move_right(self):
+    def move_right(self, shadow_grid):
         # TODO: contune here: check for intersections / collissions between objects while moving right
-        self.position.col += 1
+        if self.position.col + 1 + len(self.shape[0]) <= self.grid_width:
+            for i in range(len(self.shape)):
+                for j in range(len(self.shape[0])):
+                    if self.shape[i][j] == 1 and shadow_grid[i + self.position.row + 1][1 + j + self.position.col] == 1:
+                        return
+            self.position.col += 1
 
-    def move_left(self):
+    def move_left(self, shadow_grid):
         # TODO: contune here: check for intersections / collissions between objects while moving left
+        if self.position.col + 1 + len(self.shape[0]) <= self.grid_width:
+            for i in range(len(self.shape)):
+                for j in range(len(self.shape[0])):
+                    if self.shape[i][j] == 1 and shadow_grid[i + self.position.row + 1][j + self.position.col - 1] == 1:
+                        return
         self.position.col -= 1
 
 class Position:
